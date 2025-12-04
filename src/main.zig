@@ -91,11 +91,11 @@ pub export fn calc_sqrt(value: f64, out_result: *f64) CalcStatus {
     return .success;
 }
 
-fn mapError(err: anyerror) CalcStatus {
+fn mapError(err: CalcError) CalcStatus {
     return switch (err) {
         error.DivisionByZero => .division_by_zero,
         error.OutOfDomain => .out_of_domain,
-        else => .invalid_operator,
+        error.InvalidOperator => .invalid_operator,
     };
 }
 

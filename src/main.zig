@@ -2,10 +2,19 @@ const std = @import("std");
 
 pub fn main() !void {}
 
+const MAX_OPERATOR_LEN = 16;
+
 pub const CalcStatus = enum(u32) {
     success = 0,
     invalid_operator,
     division_by_zero,
+    out_of_domain,
+};
+
+const CalcError = error{
+    DivisionByZero,
+    InvalidOperator,
+    OutOfDomain,
 };
 
 pub export fn calc(
@@ -15,40 +24,24 @@ pub export fn calc(
     operand2: f64,
     out_result: *f64,
 ) CalcStatus {
+    if (operator_len == 0 or operator_len > MAX_OPERATOR_LEN) return .invalid_operator;
+
     const operator = operator_ptr[0..operator_len];
-    const result = performCalculator(operand1, operand2, operator) catch |err| {
-        return mapError(err);
-    };
+    const result = performCalculator(operand1, operand2, operator) catch |err| return mapError(err);
 
     out_result.* = result;
     return .success;
 }
 
-pub export fn calc_add(a: f64, b: f64) f64 {
-    return a + b;
-}
-
-pub export fn calc_subtract(a: f64, b: f64) f64 {
-    return a - b;
-}
-
-pub export fn calc_multiply(a: f64, b: f64) f64 {
-    return a * b;
-}
-
-pub export fn calc_power(a: f64, b: f64) f64 {
-    return std.math.pow(f64, a, b);
-}
-
 pub export fn calc_modulo(a: f64, b: f64, out_result: *f64) CalcStatus {
-    if (b == 0) return .division_by_zero;
-    out_result.* = @mod(a, b);
+    const value = safeModulo(a, b) catch |err| return mapError(err);
+    out_result.* = value;
     return .success;
 }
 
 pub export fn calc_divide(a: f64, b: f64, out_result: *f64) CalcStatus {
-    if (b == 0) return .division_by_zero;
-    out_result.* = a / b;
+    const value = safeDivide(a, b) catch |err| return mapError(err);
+    out_result.* = value;
     return .success;
 }
 
@@ -64,12 +57,16 @@ pub export fn calc_tan(value: f64) f64 {
     return std.math.tan(value);
 }
 
-pub export fn calc_asin(value: f64) f64 {
-    return std.math.asin(value);
+pub export fn calc_asin(value: f64, out_result: *f64) CalcStatus {
+    const safe_value = safeAsin(value) catch |err| return mapError(err);
+    out_result.* = safe_value;
+    return .success;
 }
 
-pub export fn calc_acos(value: f64) f64 {
-    return std.math.acos(value);
+pub export fn calc_acos(value: f64, out_result: *f64) CalcStatus {
+    const safe_value = safeAcos(value) catch |err| return mapError(err);
+    out_result.* = safe_value;
+    return .success;
 }
 
 pub export fn calc_atan(value: f64) f64 {
@@ -89,25 +86,26 @@ pub export fn calc_expm1(value: f64) f64 {
 }
 
 pub export fn calc_sqrt(value: f64, out_result: *f64) CalcStatus {
-    out_result.* = std.math.sqrt(value);
+    const safe_value = safeSqrt(value) catch |err| return mapError(err);
+    out_result.* = safe_value;
     return .success;
 }
 
 fn mapError(err: anyerror) CalcStatus {
     return switch (err) {
         error.DivisionByZero => .division_by_zero,
-        error.InvalidOperator => .invalid_operator,
+        error.OutOfDomain => .out_of_domain,
         else => .invalid_operator,
     };
 }
 
-fn performCalculator(num1: f64, num2: f64, operator: []const u8) !f64 {
-    if (std.mem.eql(u8, operator, "sqrt")) return std.math.sqrt(num1);
+fn performCalculator(num1: f64, num2: f64, operator: []const u8) CalcError!f64 {
+    if (std.mem.eql(u8, operator, "sqrt")) return safeSqrt(num1);
     if (std.mem.eql(u8, operator, "sin")) return std.math.sin(num1);
     if (std.mem.eql(u8, operator, "cos")) return std.math.cos(num1);
     if (std.mem.eql(u8, operator, "tan")) return std.math.tan(num1);
-    if (std.mem.eql(u8, operator, "asin")) return std.math.asin(num1);
-    if (std.mem.eql(u8, operator, "acos")) return std.math.acos(num1);
+    if (std.mem.eql(u8, operator, "asin")) return try safeAsin(num1);
+    if (std.mem.eql(u8, operator, "acos")) return try safeAcos(num1);
     if (std.mem.eql(u8, operator, "atan")) return std.math.atan(num1);
     if (std.mem.eql(u8, operator, "atan2")) return std.math.atan2(num1, num2);
     if (std.mem.eql(u8, operator, "hypot")) return std.math.hypot(num1, num2);
@@ -119,9 +117,34 @@ fn performCalculator(num1: f64, num2: f64, operator: []const u8) !f64 {
         '+' => num1 + num2,
         '-' => num1 - num2,
         '*' => num1 * num2,
-        '/' => if (num2 == 0) error.DivisionByZero else num1 / num2,
+        '/' => try safeDivide(num1, num2),
         '^' => std.math.pow(f64, num1, num2),
-        '%' => if (num2 == 0) error.DivisionByZero else @mod(num1, num2),
+        '%' => try safeModulo(num1, num2),
         else => error.InvalidOperator,
     };
+}
+
+fn safeDivide(a: f64, b: f64) CalcError!f64 {
+    if (b == 0) return error.DivisionByZero;
+    return a / b;
+}
+
+fn safeModulo(a: f64, b: f64) CalcError!f64 {
+    if (b == 0) return error.DivisionByZero;
+    return @mod(a, b);
+}
+
+fn safeSqrt(value: f64) CalcError!f64 {
+    if (value < 0) return error.OutOfDomain;
+    return std.math.sqrt(value);
+}
+
+fn safeAsin(value: f64) CalcError!f64 {
+    if (value < -1 or value > 1) return error.OutOfDomain;
+    return std.math.asin(value);
+}
+
+fn safeAcos(value: f64) CalcError!f64 {
+    if (value < -1 or value > 1) return error.OutOfDomain;
+    return std.math.acos(value);
 }
